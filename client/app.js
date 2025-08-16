@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const showHint = (message) => {
     dom.hintEl.textContent = `⚠️ ${message}`;
-    dom.hintEl.classList.add('visible'); // The correct, modern way
+    dom.hintEl.classList.add('visible');
   };
 
   const clearUI = () => {
@@ -128,9 +128,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     dom.svg.setAttribute('width', computedWidth);
     dom.svg.setAttribute('height', height);
-    dom.svg.innerHTML = ''; // Clear previous render
+    dom.svg.innerHTML = ''; 
 
-    // Render axis
     dom.svg.appendChild(createSvgElement('line', { x1: 0, y1: 20, x2: computedWidth, y2: 20, stroke: '#ccc' }));
 
     // Sort and render each lane
@@ -190,7 +189,6 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // --- 5. Event Listeners ---
-
   dom.runBtn.onclick = async () => {
     clearUI();
     dom.status.innerText = 'Submitting...';
