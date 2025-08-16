@@ -1,3 +1,13 @@
+/**
+ * ThreadScope Server
+ * Compiles and executes C++ code, streaming results via WebSocket.
+ *
+ * ❗️ SECURITY WARNING ❗️
+ * This server executes arbitrary code submitted by users. For production,
+ * it is CRITICAL to run this process inside a sandboxed environment (e.g., Docker)
+ * to prevent remote code execution vulnerabilities.
+ */
+
 const express = require('express');
 const http = require('http');
 const { spawn } = require('child_process');
@@ -6,86 +16,227 @@ const fs = require('fs');
 const path = require('path');
 const tmp = require('tmp');
 
+// --- 1. Configuration & Setup ---
+
 const app = express();
 app.use(express.json());
 
-// serve static frontend
+const TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS) || 8000;
+const MAX_SOURCE_BYTES = Number(process.env.MAX_SOURCE_BYTES) || 200_000; // 200 KB
+
 app.use('/', express.static(path.join(__dirname, '..', 'client')));
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 
-// simple mapping runId -> ws clients (we'll use ws path with runId filter in client)
+// --- 2. In-Memory State Management ---
+
+const runClients = new Map(); // runId -> Set<WebSocket>
+const detectors = new Map();  // runId -> DeadlockDetector
+
+// --- 3. WebSocket Connection Handling ---
+
 wss.on('connection', (ws, req) => {
-  // nothing special here; client filters messages by runId
-  console.log('WS client connected');
-  ws.on('close', () => console.log('WS client disconnected'));
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const runId = url.searchParams.get('runId');
+  if (!runId) {
+    ws.send(JSON.stringify({ error: 'Connection requires a ?runId parameter.' }));
+    return ws.close();
+  }
+
+  if (!runClients.has(runId)) runClients.set(runId, new Set());
+  runClients.get(runId).add(ws);
+
+  ws.on('close', () => {
+    const clients = runClients.get(runId);
+    if (clients) {
+      clients.delete(ws);
+      if (clients.size === 0) runClients.delete(runId);
+    }
+  });
 });
 
-app.post('/run', async (req, res) => {
-  try {
-    const { source } = req.body;
-    if (!source) return res.status(400).json({ error: 'source required' });
+/**
+ * Sends a JSON message to all clients subscribed to a specific run.
+ * @param {string} runId The ID of the execution run.
+ * @param {object} obj The JSON object to send.
+ */
+function sendToRun(runId, obj) {
+  const clients = runClients.get(runId);
+  if (!clients) return;
 
-    const tmpdir = tmp.dirSync({ unsafeCleanup: true });
-    const srcPath = path.join(tmpdir.name, 'prog.cpp');
-    const binPath = path.join(tmpdir.name, 'prog');
+  const msg = JSON.stringify(obj);
+  clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+  });
+}
 
+// --- 4. Deadlock Detector Logic ---
+
+function getDetector(runId) {
+  if (detectors.has(runId)) return detectors.get(runId);
+
+  const detector = {
+    lockOwner: new Map(), // lock -> tid
+    waitingFor: new Map(), // tid -> lock
+    sentHint: false,
+    onEvent(evt) {
+      // ... (logic is unchanged as it was already well-contained)
+      const t = evt.type;
+      const tid = String(evt.tid || '0');
+      if (t === 'lock_acquired') {
+        this.lockOwner.set(evt.lock, tid);
+        this.waitingFor.delete(tid);
+      } else if (t === 'lock_acquire_attempt' || t === 'lock_try_failed') {
+        if (this.lockOwner.has(evt.lock)) {
+          this.waitingFor.set(tid, evt.lock);
+          return this.checkCycle(tid);
+        } else {
+          this.waitingFor.delete(tid);
+        }
+      } else if (t === 'lock_released') {
+        if (this.lockOwner.get(evt.lock) === tid) this.lockOwner.delete(evt.lock);
+      }
+      return null;
+    },
+    checkCycle(startTid) {
+        if (this.sentHint) return;
+        let path = [], seen = new Set(), curTid = startTid;
+        while (curTid && !seen.has(curTid)) {
+            seen.add(curTid);
+            path.push(curTid);
+            const lock = this.waitingFor.get(curTid);
+            if (!lock) return null;
+            curTid = this.lockOwner.get(lock);
+        }
+        if (curTid && seen.has(curTid)) {
+            const cycleStartIndex = path.indexOf(curTid);
+            if (cycleStartIndex !== -1) {
+                const cycle = path.slice(cycleStartIndex);
+                this.sentHint = true;
+                return { kind: 'deadlock', message: `Possible deadlock involving threads: ${cycle.join(' -> ')} -> ${curTid}` };
+            }
+        }
+        return null;
+    }
+  };
+  detectors.set(runId, detector);
+  return detector;
+}
+
+
+// --- 5. Core Compilation & Execution Functions ---
+
+/**
+ * Compiles C++ source code in a temporary directory.
+ * @param {string} source The C++ source code.
+ * @param {string} dirPath The path to the temporary directory.
+ * @returns {Promise<string>} A promise that resolves with the path to the compiled binary.
+ */
+function compileSource(source, dirPath) {
+  return new Promise((resolve, reject) => {
+    const srcPath = path.join(dirPath, 'prog.cpp');
+    const binPath = path.join(dirPath, 'prog');
     fs.writeFileSync(srcPath, source);
 
-    const compile = spawn('g++', [srcPath, '-pthread', '-O0', '-g', '-o', binPath]);
+    const compile = spawn('g++', [srcPath, '-pthread', '-std=c++17', '-O0', '-g', '-o', binPath]);
     let compileErr = '';
     compile.stderr.on('data', d => compileErr += d.toString());
+    
+    compile.on('error', err => reject(new Error('Compiler spawn failed.')));
+    
     compile.on('close', code => {
       if (code !== 0) {
-        tmpdir.removeCallback();
-        return res.status(400).json({ compileError: compileErr });
+        const error = new Error(compileErr || 'Compilation failed.');
+        error.isCompileError = true;
+        return reject(error);
       }
-
-      const proc = spawn(binPath, [], { cwd: tmpdir.name });
-
-      const runId = Math.random().toString(36).slice(2, 10);
-      res.json({ runId });
-
-      let buf = '';
-      proc.stdout.on('data', chunk => {
-        buf += chunk.toString();
-        let lines = buf.split('\n');
-        buf = lines.pop();
-        for (const l of lines.filter(Boolean)) {
-          const msg = JSON.stringify({ runId, line: l });
-          // broadcast to all connected WS clients
-          wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) client.send(msg);
-          });
-        }
-      });
-
-      proc.stderr.on('data', d => {
-        const msg = JSON.stringify({ runId, stderr: d.toString() });
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) client.send(msg);
-        });
-      });
-
-      proc.on('close', code => {
-        const msg = JSON.stringify({ runId, event: 'finished', code });
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) client.send(msg);
-        });
-        tmpdir.removeCallback();
-      });
-
-      // safety: kill after 8s if still running
-      setTimeout(() => {
-        try { proc.kill('SIGKILL'); } catch(e){}
-      }, 8000);
+      resolve(binPath);
     });
+  });
+}
+
+/**
+ * Executes a compiled binary, streams its output, and handles its lifecycle.
+ * @param {string} binPath The path to the binary to execute.
+ * @param {string} runId The ID for this execution run.
+ * @param {tmp.DirResult} tmpdir The temporary directory object for cleanup.
+ */
+function executeAndStream(binPath, runId, tmpdir) {
+  const detector = getDetector(runId);
+  const proc = spawn(binPath, [], { cwd: tmpdir.name, stdio: ['ignore', 'pipe', 'pipe'] });
+  
+  let buffer = '';
+  proc.stdout.on('data', chunk => {
+    buffer += chunk.toString();
+    let lines = buffer.split('\n');
+    buffer = lines.pop(); // Keep partial line in buffer
+    lines.forEach(line => {
+      if (!line) return;
+      sendToRun(runId, { type: 'stdout', raw: line });
+      try {
+        const evt = JSON.parse(line);
+        if (evt && evt.type) {
+          sendToRun(runId, { type: 'event', event: evt });
+          const hint = detector.onEvent(evt);
+          if (hint) sendToRun(runId, { type: 'hint', hint });
+        }
+      } catch (e) { /* Not a JSON event, ignore */ }
+    });
+  });
+
+  proc.stderr.on('data', d => sendToRun(runId, { type: 'stderr', raw: d.toString() }));
+
+  proc.on('error', err => sendToRun(runId, { type: 'stderr', raw: `Process failed to start: ${err.message}` }));
+  
+  const killTimer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (e) {}
+  }, TIMEOUT_MS);
+
+  proc.on('close', (code, signal) => {
+    clearTimeout(killTimer);
+    sendToRun(runId, { type: 'finished', code, signal });
+    detectors.delete(runId);
+    try { tmpdir.removeCallback(); } catch (e) { console.error(`Failed to clean tmpdir ${tmpdir.name}`, e); }
+  });
+}
+
+// --- 6. API Endpoint ---
+
+app.post('/run', async (req, res) => {
+  const { source } = req.body;
+
+  if (!source || typeof source !== 'string' || source.trim().length === 0) {
+    return res.status(400).json({ error: 'Source code must be a non-empty string.' });
+  }
+  if (Buffer.byteLength(source, 'utf8') > MAX_SOURCE_BYTES) {
+    return res.status(400).json({ error: `Source code exceeds maximum size of ${MAX_SOURCE_BYTES / 1000} KB.` });
+  }
+  
+  const tmpdir = tmp.dirSync({ unsafeCleanup: true });
+
+  try {
+    const binPath = await compileSource(source, tmpdir.name);
+    
+    // Respond to the client immediately so it can connect the WebSocket
+    const runId = Math.random().toString(36).slice(2, 9);
+    res.json({ runId });
+
+    // Start the execution process asynchronously
+    executeAndStream(binPath, runId, tmpdir);
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'server error' });
+    try { tmpdir.removeCallback(); } catch (e) {} // Clean up on failure
+    if (err.isCompileError) {
+      return res.status(400).json({ compileError: err.message });
+    }
+    console.error('Server error during run setup:', err);
+    return res.status(500).json({ error: 'An internal server error occurred.' });
   }
 });
+
+
+// --- 7. Server Initialization ---
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
