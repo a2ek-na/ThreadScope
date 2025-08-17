@@ -1,46 +1,71 @@
-// runner/examples/example.cpp
+/*
+EXAMPLE 1: NO DEADLOCK
+Two threads safely increment a shared counter using a mutex.
+This demonstrates correct, sequential lock
+ */
 #include <iostream>
 #include <thread>
+#include <vector>
 #include <mutex>
+#include <string>
 #include <chrono>
 #include <sstream>
-#include <iomanip>
-#include <vector>
 using namespace std;
 
-mutex m1;
+// --- ThreadScope Helper Code ---
+namespace threadscope {
+    static auto T0 = chrono::high_resolution_clock::now();
+    static mutex log_mutex;
+    void log_event(const string& type, const string& lock_name) {
+        lock_guard<mutex> guard(log_mutex);
+        auto ms = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - T0).count();
+        stringstream ss_tid;
+        ss_tid << this_thread::get_id();
+        printf("{\"type\":\"%s\",\"time\":%lld,\"tid\":\"%s\",\"lock\":\"%s\"}\n", type.c_str(), (long long)ms, ss_tid.str().c_str(), lock_name.c_str());
+        fflush(stdout);
+    }
+}
+// --- End Helper Code ---
 
-double now_ms(){
-    using namespace chrono;
-    auto t = steady_clock::now().time_since_epoch();
-    return duration<double,  milli>(t).count();
+mutex counter_mutex;
+int shared_counter = 0;
+
+void increment_worker(int id) {
+    printf("[Worker %d] Started.\n", id);
+    for (int i = 0; i < 5; ++i) {
+        threadscope::log_event("lock_acquire_attempt", "SharedCounterMutex");
+        counter_mutex.lock();
+        threadscope::log_event("lock_acquired", "SharedCounterMutex");
+
+        // Critical Section
+        shared_counter++;
+        printf("[Worker %d] Incremented counter to %d.\n", id, shared_counter);
+        fflush(stdout);
+        
+        // Simulate some work
+        this_thread::sleep_for(chrono::milliseconds(50));
+
+        threadscope::log_event("lock_released", "SharedCounterMutex");
+        counter_mutex.unlock();
+
+        // Sleep outside the lock to allow other threads to run
+        this_thread::sleep_for(chrono::milliseconds(20));
+    }
+    printf("[Worker %d] Finished.\n", id);
 }
 
-void emit(const  string &type, int tid, const string &extra=""){
-    ostringstream ss;
-    ss << "{\"time\":" << fixed <<  setprecision(3) << now_ms()
-       << ",\"type\":\"" << type << "\",\"tid\":" << tid;
-    if(!extra.empty()) ss << "," << extra;
-    ss << "}";
-     cout << ss.str() <<  endl;
-     cout.flush();
-}
+int main() {
+    printf("--- No Deadlock Example ---\n");
+    fflush(stdout);
 
-void worker(int id){
-    emit("thread_start", id, "\"name\":\"worker\"");
-    emit("lock_acquire_attempt", id, "\"lock\":\"m1\"");
-    m1.lock();
-    emit("lock_acquire", id, "\"lock\":\"m1\"");
-     this_thread::sleep_for( chrono::milliseconds(300));
-    emit("lock_release", id, "\"lock\":\"m1\"");
-    m1.unlock();
-    emit("thread_end", id);
-}
+    thread t1(increment_worker, 1);
+    thread t2(increment_worker, 2);
 
-int main(){
-     thread t1(worker, 1);
-     thread t2(worker, 2);
     t1.join();
     t2.join();
+
+    printf("--- Final counter value: %d ---\n", shared_counter);
+    fflush(stdout);
+
     return 0;
 }
