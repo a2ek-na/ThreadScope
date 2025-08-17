@@ -1,11 +1,5 @@
 /**
  * ThreadScope Server
- * Compiles and executes C++ code, streaming results via WebSocket.
- *
- * ❗️ SECURITY WARNING ❗️
- * This server executes arbitrary code submitted by users. For production,
- * it is CRITICAL to run this process inside a sandboxed environment (e.g., Docker)
- * to prevent remote code execution vulnerabilities.
  */
 
 const express = require('express');
@@ -17,7 +11,6 @@ const path = require('path');
 const tmp = require('tmp');
 
 // --- 1. Configuration & Setup ---
-
 const app = express();
 app.use(express.json());
 
@@ -30,12 +23,10 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 
 // --- 2. In-Memory State Management ---
-
 const runClients = new Map(); // runId -> Set<WebSocket>
 const detectors = new Map();  // runId -> DeadlockDetector
 
 // --- 3. WebSocket Connection Handling ---
-
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const runId = url.searchParams.get('runId');
@@ -72,7 +63,6 @@ function sendToRun(runId, obj) {
 }
 
 // --- 4. Deadlock Detector Logic ---
-
 function getDetector(runId) {
   if (detectors.has(runId)) return detectors.get(runId);
 
@@ -81,7 +71,6 @@ function getDetector(runId) {
     waitingFor: new Map(), // tid -> lock
     sentHint: false,
     onEvent(evt) {
-      // ... (logic is unchanged as it was already well-contained)
       const t = evt.type;
       const tid = String(evt.tid || '0');
       if (t === 'lock_acquired') {
@@ -126,9 +115,7 @@ function getDetector(runId) {
 
 
 // --- 5. Core Compilation & Execution Functions ---
-
 /**
- * Compiles C++ source code in a temporary directory.
  * @param {string} source The C++ source code.
  * @param {string} dirPath The path to the temporary directory.
  * @returns {Promise<string>} A promise that resolves with the path to the compiled binary.
@@ -170,7 +157,7 @@ function executeAndStream(binPath, runId, tmpdir) {
   proc.stdout.on('data', chunk => {
     buffer += chunk.toString();
     let lines = buffer.split('\n');
-    buffer = lines.pop(); // Keep partial line in buffer
+    buffer = lines.pop(); 
     lines.forEach(line => {
       if (!line) return;
       sendToRun(runId, { type: 'stdout', raw: line });
@@ -181,7 +168,7 @@ function executeAndStream(binPath, runId, tmpdir) {
           const hint = detector.onEvent(evt);
           if (hint) sendToRun(runId, { type: 'hint', hint });
         }
-      } catch (e) { /* Not a JSON event, ignore */ }
+      } catch (e) { }
     });
   });
 
@@ -202,7 +189,6 @@ function executeAndStream(binPath, runId, tmpdir) {
 }
 
 // --- 6. API Endpoint ---
-
 app.post('/run', async (req, res) => {
   const { source } = req.body;
 
@@ -237,6 +223,5 @@ app.post('/run', async (req, res) => {
 
 
 // --- 7. Server Initialization ---
-
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
