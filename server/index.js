@@ -1,7 +1,4 @@
-/**
- * ThreadScope Server
- */
-
+//ThreadScope Server
 const express = require('express');
 const http = require('http');
 const { spawn } = require('child_process');
@@ -14,8 +11,8 @@ const tmp = require('tmp');
 const app = express();
 app.use(express.json());
 
-const TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS) || 8000;
-const MAX_SOURCE_BYTES = Number(process.env.MAX_SOURCE_BYTES) || 200_000; // 200 KB
+const TIMEOUT_MS = 8000;
+const MAX_SOURCE_BYTES = 200_000; // 200 KB
 
 app.use('/', express.static(path.join(__dirname, '..', 'client')));
 
@@ -47,11 +44,7 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-/**
- * Sends a JSON message to all clients subscribed to a specific run.
- * @param {string} runId The ID of the execution run.
- * @param {object} obj The JSON object to send.
- */
+
 function sendToRun(runId, obj) {
   const clients = runClients.get(runId);
   if (!clients) return;
@@ -114,12 +107,6 @@ function getDetector(runId) {
 }
 
 
-// --- 5. Core Compilation & Execution Functions ---
-/**
- * @param {string} source The C++ source code.
- * @param {string} dirPath The path to the temporary directory.
- * @returns {Promise<string>} A promise that resolves with the path to the compiled binary.
- */
 function compileSource(source, dirPath) {
   return new Promise((resolve, reject) => {
     const srcPath = path.join(dirPath, 'prog.cpp');
@@ -143,12 +130,6 @@ function compileSource(source, dirPath) {
   });
 }
 
-/**
- * Executes a compiled binary, streams its output, and handles its lifecycle.
- * @param {string} binPath The path to the binary to execute.
- * @param {string} runId The ID for this execution run.
- * @param {tmp.DirResult} tmpdir The temporary directory object for cleanup.
- */
 function executeAndStream(binPath, runId, tmpdir) {
   const detector = getDetector(runId);
   const proc = spawn(binPath, [], { cwd: tmpdir.name, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -208,11 +189,11 @@ app.post('/run', async (req, res) => {
     const runId = Math.random().toString(36).slice(2, 9);
     res.json({ runId });
 
-    // Start the execution process asynchronously
+    // Execute process asynchronously
     executeAndStream(binPath, runId, tmpdir);
 
   } catch (err) {
-    try { tmpdir.removeCallback(); } catch (e) {} // Clean up on failure
+    try { tmpdir.removeCallback(); } catch (e) {} 
     if (err.isCompileError) {
       return res.status(400).json({ compileError: err.message });
     }
@@ -223,5 +204,5 @@ app.post('/run', async (req, res) => {
 
 
 // --- 7. Server Initialization ---
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
