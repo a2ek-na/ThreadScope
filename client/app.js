@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const showHint = (message) => {
-    dom.hintEl.textContent = `⚠️ ${message}`;
+    dom.hintEl.textContent = `${message}`;
     dom.hintEl.classList.add('visible');
   };
 
@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const scheme = (location.protocol === 'https:') ? 'wss' : 'ws';
     state.ws = new WebSocket(`${scheme}://${location.host}/ws?runId=${runId}`);
 
-    state.ws.onopen = () => appendLog(`[ws] connected for run ${runId}`);
+    state.ws.onopen = () => appendLog(`Web Socket connected for run ${runId}`);
     state.ws.onmessage = (ev) => {
       try {
         handleMsg(JSON.parse(ev.data));
@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
     state.ws.onclose = (ev) => {
-      appendLog(`[ws] disconnected${ev && ev.code ? ` (code ${ev.code})` : ''}`);
+      appendLog(`Web Socket disconnected${ev && ev.code ? ` (code ${ev.code})` : ''}`);
       if (state.currentRunId === runId && dom.status.innerText !== 'Finished') {
         dom.status.innerText = 'Disconnected';
       }
