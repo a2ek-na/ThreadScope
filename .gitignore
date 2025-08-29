@@ -1,4 +1,6 @@
 node_modules/
+.vscode/
+
 tmp-*
 *.log
 *.exe
@@ -6,3 +8,4 @@ tmp-*
 /dist
 .env
 .DS_Store
+

@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   'use strict';
 
-  // --- 1. State and DOM Elements ---
+  // Elements 
   const state = {
     ws: null,
     currentRunId: null,
@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dom.timelineWrap) dom.timelineWrap.scrollLeft = 0;
   };
 
-  // --- 3. WebSocket and Message Handling ---
+  // WebSocket and Message Handling 
   const connectWS = (runId) => {
     if (state.ws) {
       try { state.ws.close(); } catch (e) {}
@@ -97,7 +97,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // --- 4. Timeline Rendering ---
+ 
+
   const createSvgElement = (tag, attributes) => {
     const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (const key in attributes) {
@@ -109,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const renderTimeline = () => {
     if (!dom.svg) return;
 
-    // Process events into lanes
     const lanes = {};
     let maxTime = state.t0 || 0;
     state.events.forEach(ev => {
@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // --- 5. Event Listeners ---
+  // Listeners 
   dom.runBtn.onclick = async () => {
     clearUI();
     dom.status.innerText = 'Submitting...';
@@ -237,7 +237,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.ws) state.ws.close();
   });
 
-  // --- 6. Initialization ---
+
+
   state.pxPerMs = parseFloat(dom.zoomInput.value);
   dom.zoomVal.textContent = `${state.pxPerMs.toFixed(2)} px/ms`;
 });

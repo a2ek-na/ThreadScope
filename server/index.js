@@ -7,7 +7,6 @@ const fs = require('fs');
 const path = require('path');
 const tmp = require('tmp');
 
-// --- 1. Configuration & Setup ---
 const app = express();
 app.use(express.json());
 
@@ -19,11 +18,9 @@ app.use('/', express.static(path.join(__dirname, '..', 'client')));
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 
-// --- 2. In-Memory State Management ---
 const runClients = new Map(); // runId -> Set<WebSocket>
 const detectors = new Map();  // runId -> DeadlockDetector
 
-// --- 3. WebSocket Connection Handling ---
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const runId = url.searchParams.get('runId');
@@ -44,7 +41,6 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-
 function sendToRun(runId, obj) {
   const clients = runClients.get(runId);
   if (!clients) return;
@@ -55,7 +51,6 @@ function sendToRun(runId, obj) {
   });
 }
 
-// --- 4. Deadlock Detector Logic ---
 function getDetector(runId) {
   if (detectors.has(runId)) return detectors.get(runId);
 
@@ -169,7 +164,7 @@ function executeAndStream(binPath, runId, tmpdir) {
   });
 }
 
-// --- 6. API Endpoint ---
+
 app.post('/run', async (req, res) => {
   const { source } = req.body;
 
@@ -185,11 +180,9 @@ app.post('/run', async (req, res) => {
   try {
     const binPath = await compileSource(source, tmpdir.name);
     
-    // Respond to the client immediately so it can connect the WebSocket
     const runId = Math.random().toString(36).slice(2, 9);
     res.json({ runId });
 
-    // Execute process asynchronously
     executeAndStream(binPath, runId, tmpdir);
 
   } catch (err) {
@@ -202,7 +195,5 @@ app.post('/run', async (req, res) => {
   }
 });
 
-
-// --- 7. Server Initialization ---
 const PORT = 3000;
 server.listen(PORT, () => console.log(`Server listening on http://localhost:${PORT}`));
