@@ -1,8 +1,4 @@
-/*
-EXAMPLE 3: PRODUCER-CONSUMER
-A producer thread creates items and a consumer thread processes
-them, using a shared queue protected by a mutex and
-synchronized with condition variables. */
+/*A producer thread creates items and a consumer thread processes them, using a shared queue protected by a mutex and synchronized with condition variables. */
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -11,33 +7,33 @@ synchronized with condition variables. */
 #include <string>
 #include <chrono>
 #include <sstream>
+using namespace std;
 
-// --- ThreadScope Helper Code ---
 namespace threadscope {
-    static auto T0 = std::chrono::high_resolution_clock::now();
-    static std::mutex log_mutex;
-    void log_event(const std::string& type, const std::string& lock_name) {
-        std::lock_guard<std::mutex> guard(log_mutex);
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - T0).count();
-        std::stringstream ss_tid;
-        ss_tid << std::this_thread::get_id();
+    static auto T0 = chrono::high_resolution_clock::now();
+    static mutex log_mutex;
+    void log_event(const string& type, const string& lock_name) {
+        lock_guard<mutex> guard(log_mutex);
+        auto ms = chrono::duration_cast<chrono::milliseconds>(chrono::high_resolution_clock::now() - T0).count();
+        stringstream ss_tid;
+        ss_tid << this_thread::get_id();
         printf("{\"type\":\"%s\",\"time\":%lld,\"tid\":\"%s\",\"lock\":\"%s\"}\n", type.c_str(), (long long)ms, ss_tid.str().c_str(), lock_name.c_str());
         fflush(stdout);
     }
 }
-// --- End Helper Code ---
-std::queue<int> data_queue;
-std::mutex queue_mutex;
-std::condition_variable cv;
+
+queue<int> data_queue;
+mutex queue_mutex;
+condition_variable cv;
 bool finished = false;
 
 void producer() {
     printf("[Producer] Started.\n");
     for (int i = 0; i < 10; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        this_thread::sleep_for(chrono::milliseconds(100));
         
         threadscope::log_event("lock_acquire_attempt", "QueueLock");
-        std::unique_lock<std::mutex> lock(queue_mutex);
+        unique_lock<mutex> lock(queue_mutex);
         threadscope::log_event("lock_acquired", "QueueLock");
         
         printf("[Producer] Pushing item %d\n", i);
@@ -52,7 +48,7 @@ void producer() {
 
 
     threadscope::log_event("lock_acquire_attempt", "QueueLock");
-    std::unique_lock<std::mutex> lock(queue_mutex);
+    unique_lock<mutex> lock(queue_mutex);
     threadscope::log_event("lock_acquired", "QueueLock");
     finished = true;
     threadscope::log_event("lock_released", "QueueLock");
@@ -65,7 +61,7 @@ void consumer() {
     printf("[Consumer] Started.\n");
     while (true) {
         threadscope::log_event("lock_acquire_attempt", "QueueLock");
-        std::unique_lock<std::mutex> lock(queue_mutex);
+        unique_lock<mutex> lock(queue_mutex);
         threadscope::log_event("lock_acquired", "QueueLock");
 
         // Wait until the queue is not empty OR production is finished
@@ -92,8 +88,8 @@ int main() {
     printf("--- Producer-Consumer Example ---\n");
     fflush(stdout);
 
-    std::thread p(producer);
-    std::thread c(consumer);
+    thread p(producer);
+    thread c(consumer);
 
     p.join();
     c.join();

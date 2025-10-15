@@ -1,8 +1,4 @@
-/*
-EXAMPLE 4: THREAD BARRIER
-Multiple threads work in phases. They all stop at a barrier
-and wait for each other. Once all threads have arrived, they
-are released to continue their work simultaneously. */
+/*Multiple threads work in phases. They all stop at a barrier and wait for each other. Once all threads have arrived, they are released to continue their work simultaneously. */
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -12,7 +8,7 @@ are released to continue their work simultaneously. */
 #include <chrono>
 #include <sstream>
 using namespace std;
-// --- ThreadScope Helper Code ---
+
 namespace threadscope {
     static auto T0 = chrono::high_resolution_clock::now();
     static mutex log_mutex;
@@ -25,7 +21,6 @@ namespace threadscope {
         fflush(stdout);
     }
 }
-// --- End Helper Code ---
 
 class Barrier {
 public:
@@ -40,14 +35,11 @@ public:
         waiting++;
         
         if (counter == thread_count) {
-            // This is the last thread to arrive, release all others
             counter = 0;
             waiting = 0;
             cv.notify_all();
-        } else {
-            // Wait until the last thread arrives
+        } else 
             cv.wait(lock, [this]{ return counter == 0; });
-        }
         threadscope::log_event("lock_released", "BarrierLock");
     }
 
@@ -83,13 +75,12 @@ int main() {
     Barrier barrier(num_threads);
     vector<thread> threads;
 
-    for (int i = 0; i < num_threads; ++i) {
+    for (int i = 0; i < num_threads; ++i) 
         threads.emplace_back(worker, i + 1, ref(barrier));
-    }
+    
 
-    for (auto& t : threads) {
+    for (auto& t : threads) 
         t.join();
-    }
 
     printf("--- All workers finished. ---\n");
     fflush(stdout);

@@ -1,8 +1,5 @@
-/*
-EXAMPLE 2: WITH DEADLOCK
-Two threads attempt to acquire two mutexes in opposite order,
-causing a classic circular dependency deadlock.
- */
+//EXAMPLE 2: WITH DEADLOCK
+//Two threads attempt to acquire two mutexes in opposite order, causing a classic circular dependency deadlock.
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -10,7 +7,8 @@ causing a classic circular dependency deadlock.
 #include <chrono>
 #include <sstream>
 using namespace std;
-// --- ThreadScope Helper Code ---
+
+
 namespace threadscope {
     static auto T0 = chrono::high_resolution_clock::now();
     static mutex log_mutex;
@@ -23,7 +21,7 @@ namespace threadscope {
         fflush(stdout);
     }
 }
-// --- End Helper Code ---
+
 
 mutex mutex_A;
 mutex mutex_B;

@@ -1,8 +1,5 @@
-/*
-EXAMPLE 1: NO DEADLOCK
-Two threads safely increment a shared counter using a mutex.
-This demonstrates correct, sequential lock
- */
+//Two threads safely increment a shared counter using a mutex.
+//This demonstrates correct, sequential lock
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -12,7 +9,7 @@ This demonstrates correct, sequential lock
 #include <sstream>
 using namespace std;
 
-// --- ThreadScope Helper Code ---
+
 namespace threadscope {
     static auto T0 = chrono::high_resolution_clock::now();
     static mutex log_mutex;
@@ -25,7 +22,7 @@ namespace threadscope {
         fflush(stdout);
     }
 }
-// --- End Helper Code ---
+
 
 mutex counter_mutex;
 int shared_counter = 0;
@@ -37,18 +34,15 @@ void increment_worker(int id) {
         counter_mutex.lock();
         threadscope::log_event("lock_acquired", "SharedCounterMutex");
 
-        // Critical Section
         shared_counter++;
         printf("[Worker %d] Incremented counter to %d.\n", id, shared_counter);
         fflush(stdout);
         
-        // Simulate some work
         this_thread::sleep_for(chrono::milliseconds(50));
 
         threadscope::log_event("lock_released", "SharedCounterMutex");
         counter_mutex.unlock();
 
-        // Sleep outside the lock to allow other threads to run
         this_thread::sleep_for(chrono::milliseconds(20));
     }
     printf("[Worker %d] Finished.\n", id);
