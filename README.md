@@ -41,7 +41,7 @@ It’s split into two main parts: the Node.js backend and the vanilla JS fronten
 1.  **Clone the project:**
 
     ```bash
-    git clone https://github.com/your-username/ThreadScope.git
+    git clone https://github.com/a2ek-na/ThreadScope.git
     cd ThreadScope
     ```
 
